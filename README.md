@@ -29,6 +29,8 @@ We spent hundreds of hours of intense reverse-engineering:
 
 **We are releasing this entire project 100% free and open-source.** Nobody should have to suffer through weeks of broken SIP packets and silent audio just to use a phone service they already pay for. If this project helps you, please consider giving the repository a ⭐ star!
 
+— **Gul Marufa ([@marufagul](https://github.com/marufagul))**
+
 ---
 
 > [!TIP]
