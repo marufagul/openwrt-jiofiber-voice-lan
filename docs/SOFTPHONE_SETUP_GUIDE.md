@@ -77,3 +77,21 @@ JioFiber / Jio AirFiber voice accounts use credentials derived from your landlin
 4. Under **Audio Settings / Codecs**:
    - Set Codec 1 to `PCMA (G.711a)`.
 5. Apply and reboot the phone.
+
+---
+
+## 📶 Important Wi-Fi Setting for MediaTek (mt76) Routers
+
+If using MediaTek Filogic (e.g. MT7986, MT7981, MT7621) or any router running the `mt76` wireless driver:
+
+> [!WARNING]
+> MediaTek's `mt76` driver drops SSDP multicast discovery packets (`239.255.255.250:1900`) and client DHCP handshakes when `multicast_to_unicast` is active. This prevents the official **JioJoin** mobile app and softphones on Wi-Fi from detecting the router's voice beacon.
+>
+> Run this command on your OpenWrt router to allow multicast over Wi-Fi:
+> ```bash
+> for iface in $(uci show wireless | grep -E "=wifi-iface" | cut -d'.' -f2 | cut -d'=' -f1); do
+>     uci set wireless."$iface".multicast_to_unicast='0'
+> done
+> uci commit wireless
+> wifi reload
+> ```
