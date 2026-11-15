@@ -38,8 +38,8 @@ echo "[+] Safety backup saved to $BACKUP_DIR/backup_${TIMESTAMP}.tar.gz"
 echo "[*] Step 2/5: Detecting physical WAN interface..."
 WAN_IFACE=$(uci -q get network.wan.device || uci -q get network.wan.ifname || echo "")
 
-if [ -z "$WAN_IFACE" ]; then
-    for dev in eth1 eth0 wan sfp sfp1; do
+if [ -z "$WAN_IFACE" ] || echo "$WAN_IFACE" | grep -q "\."; then
+    for dev in wan eth1 eth0 sfp; do
         if ip link show "$dev" >/dev/null 2>&1; then
             WAN_IFACE="$dev"
             break
@@ -48,9 +48,7 @@ if [ -z "$WAN_IFACE" ]; then
 fi
 
 if [ -z "$WAN_IFACE" ]; then
-    echo "[-] Failed to automatically detect WAN interface."
-    printf "Enter your physical WAN interface name (e.g. eth1, eth0): "
-    read -r WAN_IFACE
+    WAN_IFACE="wan"
 fi
 
 echo "[+] Using WAN device: $WAN_IFACE"
@@ -59,16 +57,12 @@ VOICE_DEV="${WAN_IFACE}.406"
 # Step 3: Configure Voice VLAN 406 in UCI
 echo "[*] Step 3/5: Configuring Voice VLAN 406 in UCI network..."
 
-# Create 802.1q VLAN device if device-based syntax is used (OpenWrt 21+)
-if uci -q get network.@device[0] >/dev/null 2>&1; then
-    if ! uci -q get network.voice_dev >/dev/null 2>&1; then
-        uci set network.voice_dev=device
-        uci set network.voice_dev.name="$VOICE_DEV"
-        uci set network.voice_dev.type="8021q"
-        uci set network.voice_dev.ifname="$WAN_IFACE"
-        uci set network.voice_dev.vid="406"
-    fi
-fi
+# Create 802.1q VLAN device
+uci set network.voice_dev=device
+uci set network.voice_dev.name="$VOICE_DEV"
+uci set network.voice_dev.type="8021q"
+uci set network.voice_dev.ifname="$WAN_IFACE"
+uci set network.voice_dev.vid="406"
 
 # Configure network.voice interface
 uci set network.voice=interface
@@ -82,46 +76,58 @@ uci set network.voice.metric="20"
 # Step 4: Configure Firewall Zone & Forwarding
 echo "[*] Step 4/5: Configuring firewall zone and SIP routing..."
 
-if ! uci -q get firewall.voice_zone >/dev/null 2>&1; then
-    uci set firewall.voice_zone=zone
-    uci set firewall.voice_zone.name="voice"
-    uci set firewall.voice_zone.network="voice"
-    uci set firewall.voice_zone.input="REJECT"
-    uci set firewall.voice_zone.output="ACCEPT"
-    uci set firewall.voice_zone.forward="REJECT"
-    uci set firewall.voice_zone.masq="1"
-    uci set firewall.voice_zone.mtu_fix="1"
-fi
+uci set firewall.voice_zone=zone
+uci set firewall.voice_zone.name="voice"
+uci set firewall.voice_zone.network="voice"
+uci set firewall.voice_zone.input="REJECT"
+uci set firewall.voice_zone.output="ACCEPT"
+uci set firewall.voice_zone.forward="REJECT"
+uci set firewall.voice_zone.masq="1"
+uci set firewall.voice_zone.masq6="1"
+uci set firewall.voice_zone.mtu_fix="1"
 
 # Allow LAN to forward to Voice zone for SIP/IMS traffic
-if ! uci -q get firewall.lan_to_voice >/dev/null 2>&1; then
-    uci set firewall.lan_to_voice=forwarding
-    uci set firewall.lan_to_voice.src="lan"
-    uci set firewall.lan_to_voice.dest="voice"
-fi
+uci set firewall.lan_to_voice=forwarding
+uci set firewall.lan_to_voice.src="lan"
+uci set firewall.lan_to_voice.dest="voice"
 
 # Allow SIP inbound replies
-if ! uci -q get firewall.voice_sip_allow >/dev/null 2>&1; then
-    uci set firewall.voice_sip_allow=rule
-    uci set firewall.voice_sip_allow.name="Allow-Jio-SIP"
-    uci set firewall.voice_sip_allow.src="voice"
-    uci set firewall.voice_sip_allow.dest="lan"
-    uci set firewall.voice_sip_allow.proto="udp tcp"
-    uci set firewall.voice_sip_allow.dest_port="5060 5061 5068"
-    uci set firewall.voice_sip_allow.target="ACCEPT"
-fi
+uci set firewall.voice_sip_allow=rule
+uci set firewall.voice_sip_allow.name="Allow-Jio-SIP"
+uci set firewall.voice_sip_allow.src="voice"
+uci set firewall.voice_sip_allow.dest="lan"
+uci set firewall.voice_sip_allow.proto="udp tcp"
+uci set firewall.voice_sip_allow.dest_port="5060 5061 5068"
+uci set firewall.voice_sip_allow.target="ACCEPT"
 
 uci commit network
 uci commit firewall
 
-# Step 5: Install JioJoin Discovery Beacon & Rollback Utilities
-echo "[*] Step 5/5: Installing JioJoin beacon daemon and service..."
+# Step 5: Install QoS nftables DSCP Rules & JioJoin SSDP Beacon
+echo "[*] Step 5/5: Installing QoS rules and JioJoin SSDP beacon daemon..."
+
+# Install nftables QoS rules into /etc/nftables.d/
+mkdir -p /etc/nftables.d
+cat << 'EOF' > /etc/nftables.d/40-jio-voice.nft
+#!/usr/sbin/nft -f
+table inet jio_voice_qos {
+    chain mangle_prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+        ip protocol udp udp dport { 5060, 5061, 5068 } ip dscp set cs5
+        ip protocol tcp tcp dport { 5060, 5061, 5068 } ip dscp set cs5
+        ip6 nexthdr udp udp dport { 5060, 5061, 5068 } ip6 dscp set cs5
+        ip6 nexthdr tcp tcp dport { 5060, 5061, 5068 } ip6 dscp set cs5
+        ip protocol udp udp dport 10000-20000 ip dscp set ef
+        ip6 nexthdr udp udp dport 10000-20000 ip6 dscp set ef
+    }
+}
+EOF
 
 ROUTER_IP=$(uci -q get network.lan.ipaddr || echo "192.168.1.1")
 MAC_ADDR=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo "00:11:22:33:44:55")
 UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 
-# Create UPnP device descriptor
+# Create UPnP device descriptor in /www
 mkdir -p /www
 cat <<EOF > /www/jio_desc.xml
 <?xml version="1.0"?>
@@ -143,16 +149,20 @@ cat <<EOF > /www/jio_desc.xml
 </root>
 EOF
 
-# Install beacon daemon script
+# Install RFC-compliant SSDP NOTIFY daemon script
 cat << 'EOF' > "$INSTALL_DIR/jio-beacon.sh"
 #!/bin/sh
 ROUTER_IP=$(uci -q get network.lan.ipaddr || echo "192.168.1.1")
 MAC_ADDR=$(cat /sys/class/net/br-lan/address 2>/dev/null || echo "001122334455")
 UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 
+SSDP_NOTIFY="NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: http://${ROUTER_IP}/jio_desc.xml\r\nNT: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nNTS: ssdp:alive\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nUSN: uuid:jio-gateway-${UUID}::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
+
 while true; do
     if command -v socat >/dev/null 2>&1; then
-        printf "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nEXT:\r\nLOCATION: http://%s/jio_desc.xml\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nUSN: uuid:jio-gateway-%s::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n" "$ROUTER_IP" "$UUID" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
+        printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
+    elif command -v nc >/dev/null 2>&1; then
+        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
     sleep 30
 done
@@ -187,6 +197,7 @@ case "$1" in
         if [ -n "$LATEST" ]; then
             echo "[*] Restoring configurations from $LATEST..."
             tar -xzf "$LATEST" -C /
+            rm -f /etc/nftables.d/40-jio-voice.nft
             /etc/init.d/network restart
             /etc/init.d/firewall restart
             echo "[SUCCESS] Configuration reverted to pre-install snapshot."

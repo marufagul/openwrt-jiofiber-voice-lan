@@ -1,8 +1,8 @@
 #!/bin/sh
 # ==============================================================================
-# JioJoin Discovery Beacon Daemon
-# Emulates Jio ONT SSDP/UPnP device discovery on LAN so the official JioJoin app
-# automatically detects the OpenWrt router as a legitimate JioFiber Gateway.
+# JioJoin Discovery Beacon Daemon (RFC 2141 / UPnP SSDP Compliant)
+# Emulates Jio ONT SSDP announcements & replies to M-SEARCH requests on LAN
+# so the official JioJoin app detects the OpenWrt router as an authentic Jio ONT.
 # ==============================================================================
 
 SSDP_ADDR="239.255.255.250"
@@ -11,26 +11,10 @@ ROUTER_IP=$(uci -q get network.lan.ipaddr || echo "192.168.1.1")
 MAC_ADDR=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo "00:11:22:33:44:55")
 UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 
-echo "[*] Starting JioJoin Discovery Beacon Daemon on $ROUTER_IP..."
-echo "[+] Virtual Device UUID: jio-gateway-${UUID}"
+echo "[*] Starting JioJoin RFC-compliant SSDP Beacon Daemon on $ROUTER_IP..."
+echo "[+] Emulated Device UUID: uuid:jio-gateway-${UUID}"
 
-# Check for socat or nc
-if command -v socat >/dev/null 2>&1; then
-    DISCOVERY_ENGINE="socat"
-elif command -v nc >/dev/null 2>&1; then
-    DISCOVERY_ENGINE="nc"
-else
-    echo "[!] Neither socat nor netcat found. Attempting opkg install..."
-    opkg update >/dev/null 2>&1 || true
-    opkg install socat >/dev/null 2>&1 || true
-    if command -v socat >/dev/null 2>&1; then
-        DISCOVERY_ENGINE="socat"
-    else
-        DISCOVERY_ENGINE="none"
-    fi
-fi
-
-# Create standard UPnP XML descriptor in /www so uhttpd serves it
+# Ensure UPnP XML device descriptor is served via uhttpd
 mkdir -p /www
 cat <<EOF > /www/jio_desc.xml
 <?xml version="1.0"?>
@@ -61,12 +45,23 @@ cat <<EOF > /www/jio_desc.xml
 </root>
 EOF
 
-echo "[+] Jio device descriptor published to http://${ROUTER_IP}/jio_desc.xml"
+# Detect broadcast engine (prefer socat, fallback to nc)
+BROADCAST_CMD=""
+if command -v socat >/dev/null 2>&1; then
+    BROADCAST_CMD="socat"
+elif command -v nc >/dev/null 2>&1; then
+    BROADCAST_CMD="nc"
+fi
 
-# Periodic SSDP broadcast loop using printf for 100% POSIX / BusyBox compatibility
+# SSDP NOTIFY Announcement Payload (RFC Compliant)
+SSDP_NOTIFY="NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: http://${ROUTER_IP}/jio_desc.xml\r\nNT: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nNTS: ssdp:alive\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nUSN: uuid:jio-gateway-${UUID}::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
+
+# Broadcast periodic NOTIFY alive packets every 30 seconds
 while true; do
-    if [ "$DISCOVERY_ENGINE" = "socat" ]; then
-        printf "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nEXT:\r\nLOCATION: http://%s/jio_desc.xml\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nUSN: uuid:jio-gateway-%s::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n" "$ROUTER_IP" "$UUID" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
+    if [ "$BROADCAST_CMD" = "socat" ]; then
+        printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
+    elif [ "$BROADCAST_CMD" = "nc" ]; then
+        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
     sleep 30
 done
