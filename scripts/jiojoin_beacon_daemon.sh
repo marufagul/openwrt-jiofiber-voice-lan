@@ -14,6 +14,10 @@ UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 echo "[*] Starting JioJoin RFC-compliant SSDP Beacon Daemon on $ROUTER_IP..."
 echo "[+] Emulated Device UUID: uuid:jio-gateway-${UUID}"
 
+# Ensure multicast route points explicitly to LAN/Wi-Fi bridge (br-lan)
+# Without this route, Linux routes 239.255.255.250 out the default WAN gateway!
+ip route add 224.0.0.0/4 dev br-lan 2>/dev/null || true
+
 # Ensure UPnP XML device descriptor is served via uhttpd
 mkdir -p /www
 cat <<EOF > /www/jio_desc.xml
@@ -56,12 +60,26 @@ fi
 # SSDP NOTIFY Announcement Payload (RFC Compliant)
 SSDP_NOTIFY="NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: http://${ROUTER_IP}/jio_desc.xml\r\nNT: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nNTS: ssdp:alive\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nUSN: uuid:jio-gateway-${UUID}::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
 
-# Broadcast periodic NOTIFY alive packets every 30 seconds
-while true; do
+send_beacon() {
     if [ "$BROADCAST_CMD" = "socat" ]; then
+        printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,bind=${ROUTER_IP},broadcast 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
     elif [ "$BROADCAST_CMD" = "nc" ]; then
+        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 -s "$ROUTER_IP" 239.255.255.250 1900 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
-    sleep 30
+}
+
+# 1. Rapid startup burst (3 packets at 1-second intervals for instant app pairing)
+echo "[*] Sending initial rapid discovery beacon burst..."
+send_beacon
+sleep 1
+send_beacon
+sleep 1
+send_beacon
+
+# 2. Main periodic beacon loop (every 10 seconds)
+while true; do
+    sleep 10
+    send_beacon
 done

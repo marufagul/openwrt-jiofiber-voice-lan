@@ -127,6 +127,9 @@ ROUTER_IP=$(uci -q get network.lan.ipaddr || echo "192.168.1.1")
 MAC_ADDR=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo "00:11:22:33:44:55")
 UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 
+# Explicitly ensure 224.0.0.0/4 multicast route points to br-lan
+ip route add 224.0.0.0/4 dev br-lan 2>/dev/null || true
+
 # Create UPnP device descriptor in /www
 mkdir -p /www
 cat <<EOF > /www/jio_desc.xml
@@ -156,15 +159,31 @@ ROUTER_IP=$(uci -q get network.lan.ipaddr || echo "192.168.1.1")
 MAC_ADDR=$(cat /sys/class/net/br-lan/address 2>/dev/null || echo "001122334455")
 UUID=$(echo "$MAC_ADDR" | tr -d ':' | tr '[:upper:]' '[:lower:]')
 
+ip route add 224.0.0.0/4 dev br-lan 2>/dev/null || true
+
 SSDP_NOTIFY="NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: http://${ROUTER_IP}/jio_desc.xml\r\nNT: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nNTS: ssdp:alive\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nUSN: uuid:jio-gateway-${UUID}::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
 
-while true; do
+send_beacon() {
     if command -v socat >/dev/null 2>&1; then
+        printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,bind=${ROUTER_IP},broadcast 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
     elif command -v nc >/dev/null 2>&1; then
+        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 -s "$ROUTER_IP" 239.255.255.250 1900 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
-    sleep 30
+}
+
+# Initial rapid beacon burst
+send_beacon
+sleep 1
+send_beacon
+sleep 1
+send_beacon
+
+# Periodic loop every 10 seconds
+while true; do
+    sleep 10
+    send_beacon
 done
 EOF
 chmod +x "$INSTALL_DIR/jio-beacon.sh"
@@ -221,9 +240,8 @@ echo ""
 echo "=========================================================="
 echo "🎉 SUCCESS: JioFiber Voice Gateway is ready!"
 echo "=========================================================="
-echo "1. Connect your smartphone to your OpenWrt Wi-Fi."
-echo "2. Open the official JioJoin app -> Tap Configure Device."
-echo "   (It will detect your router immediately and prompt for OTP)."
-echo "3. Or configure MicroSIP / Linphone using your landline number."
-echo "4. Safety Rollback: /etc/jio-voice/backup_restore.sh --restore"
+echo "• Voice VLAN:             $VOICE_DEV"
+echo "• Multicast Beacon:       br-lan (Active RFC SSDP NOTIFY)"
+echo "• Pairing Status:         Instant JioJoin Detection Enabled"
+echo "• Safety Rollback:        /etc/jio-voice/backup_restore.sh --restore"
 echo "=========================================================="
