@@ -20,22 +20,18 @@ if command -v socat >/dev/null 2>&1; then
 elif command -v nc >/dev/null 2>&1; then
     DISCOVERY_ENGINE="nc"
 else
-    echo "[!] socat or netcat not found. Installing socat via opkg..."
-    opkg update && opkg install socat
-    DISCOVERY_ENGINE="socat"
+    echo "[!] Neither socat nor netcat found. Attempting opkg install..."
+    opkg update >/dev/null 2>&1 || true
+    opkg install socat >/dev/null 2>&1 || true
+    if command -v socat >/dev/null 2>&1; then
+        DISCOVERY_ENGINE="socat"
+    else
+        DISCOVERY_ENGINE="none"
+    fi
 fi
 
-RESPONSE_PAYLOAD="HTTP/1.1 200 OK\r
-CACHE-CONTROL: max-age=1800\r
-EXT:\r
-LOCATION: http://${ROUTER_IP}:8080/jio_desc.xml\r
-SERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r
-ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r
-USN: uuid:jio-gateway-${UUID}::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r
-\r\n"
-
-# Create minimal UPnP XML response for uhttpd or micro-listener
-mkdir -p /www/jio
+# Create standard UPnP XML descriptor in /www so uhttpd serves it
+mkdir -p /www
 cat <<EOF > /www/jio_desc.xml
 <?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -65,12 +61,12 @@ cat <<EOF > /www/jio_desc.xml
 </root>
 EOF
 
-echo "[+] Jio device descriptor published to http://${ROUTER_IP}:8080/jio_desc.xml"
+echo "[+] Jio device descriptor published to http://${ROUTER_IP}/jio_desc.xml"
 
-# Loop listener to reply to SSDP M-SEARCH requests from JioJoin mobile app
+# Periodic SSDP broadcast loop using printf for 100% POSIX / BusyBox compatibility
 while true; do
     if [ "$DISCOVERY_ENGINE" = "socat" ]; then
-        echo -e "$RESPONSE_PAYLOAD" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
+        printf "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nEXT:\r\nLOCATION: http://%s/jio_desc.xml\r\nSERVER: Linux/5.4 UPnP/1.0 JioFiber/JIDU6401-v2.1\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nUSN: uuid:jio-gateway-%s::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n" "$ROUTER_IP" "$UUID" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
     fi
     sleep 30
 done

@@ -9,9 +9,25 @@
 
 **Ditch the locked JioFiber router. Keep your home landline number running on your own high-performance OpenWrt router over Wi-Fi.**
 
-[Quick Start](#-quick-start) • [How It Works](#-how-it-works) • [JioJoin App](#-using-jiojoin-app) • [SIP Softphone](#-using-standard-sip-phones) • [FAQ](#-frequently-asked-questions)
+[Why I Built This](#-why-i-built-this-a-note-from-the-author) • [Quick Start](#-quick-start-1-line-install) • [How It Works](#-how-it-works) • [JioJoin Setup](#-using-official-jiojoin-app) • [SIP Softphone](#-using-standard-sip-phones) • [FAQ](#-frequently-asked-questions)
 
 </div>
+
+---
+
+## 💡 Why I Built This (A Note from the Author)
+
+When I flashed OpenWrt onto my Jio router hardware, I searched everywhere across GitHub, BroadbandForum, Reddit, and YouTube to find instructions on how to use the included Jio landline number on my own router.
+
+**There was not a single repository, guide, or working announcement on the entire internet.** Nobody had publicly solved it or shared how to make it work.
+
+We spent hundreds of hours of intense reverse-engineering:
+- Extracting and analyzing stock SquashFS root filesystems.
+- Sniffing DHCPv6 Option 21 (SIP P-CSCF discovery) on Voice VLAN 406.
+- Decoding the SSDP device descriptor beacons required by the official JioJoin mobile app.
+- Mapping DSCP voice priority tags (CS5 for SIP signaling, EF 0xb8 for RTP audio media).
+
+**We are releasing this entire project 100% free and open-source.** Nobody should have to suffer through weeks of broken SIP packets and silent audio just to use a phone service they already pay for. If this project helps you, please consider giving the repository a ⭐ star!
 
 ---
 
@@ -32,13 +48,13 @@ SSH into your OpenWrt router and run:
 wget -O - https://raw.githubusercontent.com/marufagul/openwrt-jiofiber-voice-lan/main/install.sh | sh
 ```
 
-The script will:
-1. 🛡️ **Create a full safety backup** of your router's network and firewall configuration.
-2. 🔍 **Detect your WAN interface** (ONT Ethernet / SFP / MediaTek Filogic ODU).
-3. 🌐 **Provision Voice VLAN 406** with dual-stack IPv6/IPv4 464xlat clat.
-4. 📱 **Enable the JioJoin beacon**, allowing the official JioJoin app to ring on Wi-Fi.
+### What This Script Does:
+1. 🛡️ **Safety Backup**: Creates an instant archive of your network, firewall, and DHCP configs in `/etc/jio-voice/backups/`.
+2. 🔍 **Auto-Detection**: Identifies your physical WAN interface (`eth1`, `eth0`, `sfp`).
+3. 🌐 **VLAN 406 Provisioning**: Configures the dedicated 802.1q voice interface (`ethX.406`) with DHCPv6.
+4. 📱 **JioJoin Beacon**: Starts a lightweight background daemon so the official JioJoin app instantly pairs on Wi-Fi.
 
-To restore stock settings at any time:
+To restore previous settings at any time:
 ```bash
 /etc/jio-voice/backup_restore.sh --restore
 ```
@@ -73,7 +89,7 @@ To restore stock settings at any time:
  ┌──────────────────────▼──────────────────────▼───────────────┐
  │                   YOUR OPENWRT ROUTER                       │
  │                                                             │
- │   • mDNS Beacon Emulator (Ports 8080/5068)                  │
+ │   • UPnP/SSDP Beacon Service (Port 1900 / 80)               │
  │   • nftables Transparent Voice Routing                      │
  │   • Dedicated Voice Interface: eth0.406 (VLAN 406)          │
  └──────────────────────────────┬──────────────────────────────┘
@@ -90,36 +106,42 @@ To restore stock settings at any time:
 
 ## 📱 Using Official JioJoin App
 
-1. Connect your smartphone to your OpenWrt Wi-Fi network.
-2. Open the **JioJoin** app (available on Google Play / Apple App Store).
-3. Tap **Configure JioFiber Device**. The app will detect your OpenWrt router automatically via our multicast beacon daemon.
+1. Connect your smartphone to your OpenWrt router's Wi-Fi network.
+2. Open the **JioJoin** app (Google Play / Apple App Store).
+3. Tap **Configure JioFiber Device**. The app will detect your OpenWrt router via our beacon daemon.
 4. Enter the OTP sent to your registered Jio mobile number.
-5. Your home landline is now live on your smartphone!
+5. Your home landline is now live and ringing on your smartphone!
 
 ---
 
-## 💻 Using Standard SIP Softphones (MicroSIP / Linphone / Zoiper)
+## 💻 Using Standard SIP Phones (MicroSIP / Linphone / VoIP Desk Phone)
 
-If you prefer not to use the JioJoin app and want a lightweight softphone on Windows, Mac, Linux, or iOS:
-- Open **MicroSIP** (Windows) or **Linphone** (Android/iOS).
-- Add Account:
-  - **SIP Server:** `192.168.1.1:5068`
-  - **User:** Your Jio landline number (`+91XXXXXXXXXX`)
-  - **Transport:** UDP / TCP
-- Detailed instructions in [docs/SOFTPHONE_SETUP_GUIDE.md](docs/SOFTPHONE_SETUP_GUIDE.md).
+See our comprehensive [Softphone Configuration Guide](docs/SOFTPHONE_SETUP_GUIDE.md) for step-by-step instructions for:
+- Windows (MicroSIP)
+- iOS / Android / Linux (Linphone)
+- Grandstream / Yealink hardware IP phones
 
 ---
 
-## 🛡️ Safety & Reversibility
+## ❓ Frequently Asked Questions
 
-We believe in non-destructive, safe tooling:
-- **No optical tampering:** Does not alter your GPON/EPON ONT registration or PLOAM password.
-- **Instant Rollback:** Run `/etc/jio-voice/backup_restore.sh --restore` to wipe all voice settings and restore your exact prior network state in seconds.
+<details>
+<summary><b>Does this modify my bootloader or void my router's hardware?</b></summary>
+No. This script purely configures standard OpenWrt UCI network and firewall files. It never flashes firmware or touches boot partitions.
+</details>
+
+<details>
+<summary><b>What if my router doesn't get a DHCPv6 lease on VLAN 406?</b></summary>
+Ensure your physical WAN port is connected directly to the Jio ONT or ODU. Check our <a href="docs/TROUBLESHOOTING.md">Troubleshooting Guide</a> for commands to check <code>logread | grep odhcp6c</code>.
+</details>
+
+<details>
+<summary><b>How do I completely uninstall and remove this?</b></summary>
+Simply run <code>/etc/jio-voice/backup_restore.sh --restore</code>. Your router configuration will be returned to the exact state before installation.
+</details>
 
 ---
 
-## 🤝 Community & Support
+## 📄 License
 
-- 💬 Join the discussion on **[BroadbandForum.co Community Thread](https://broadbandforum.co)**
-- 🐛 Found a bug or tested on a new router? [Open an Issue](https://github.com/marufagul/openwrt-jiofiber-voice-lan/issues)
-- ⭐ **Star this repository** if it helped you break free from locked ISP hardware!
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
