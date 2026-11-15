@@ -65,7 +65,6 @@ send_beacon() {
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,bind=${ROUTER_IP},broadcast 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
     elif [ "$BROADCAST_CMD" = "nc" ]; then
-        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 -s "$ROUTER_IP" 239.255.255.250 1900 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
 }

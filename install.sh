@@ -29,13 +29,27 @@ fi
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BACKUP_DIR"
 
+# Universal Package Manager Wrapper (Supports OpenWrt 25.x apk and 23.05/24.10 opkg)
+pkg_install() {
+    if command -v apk >/dev/null 2>&1; then
+        apk update >/dev/null 2>&1 || true
+        apk add "$@" >/dev/null 2>&1 || true
+    elif command -v opkg >/dev/null 2>&1; then
+        opkg update >/dev/null 2>&1 || true
+        opkg install "$@" >/dev/null 2>&1 || true
+    fi
+}
+
 # Step 1: Backup existing network and firewall configs
-echo "[*] Step 1/5: Creating configuration snapshot backup..."
+echo "[*] Step 1/6: Creating configuration snapshot backup..."
 tar -czf "$BACKUP_DIR/backup_${TIMESTAMP}.tar.gz" /etc/config/network /etc/config/firewall /etc/config/dhcp 2>/dev/null || true
 echo "[+] Safety backup saved to $BACKUP_DIR/backup_${TIMESTAMP}.tar.gz"
 
+# Install socat for high-reliability multicast SSDP broadcasts
+pkg_install socat
+
 # Step 2: Auto-detect WAN interface
-echo "[*] Step 2/5: Detecting physical WAN interface..."
+echo "[*] Step 2/6: Detecting physical WAN interface..."
 WAN_IFACE=$(uci -q get network.wan.device || uci -q get network.wan.ifname || echo "")
 
 if [ -z "$WAN_IFACE" ] || echo "$WAN_IFACE" | grep -q "\."; then
@@ -55,7 +69,7 @@ echo "[+] Using WAN device: $WAN_IFACE"
 VOICE_DEV="${WAN_IFACE}.406"
 
 # Step 3: Configure Voice VLAN 406 in UCI
-echo "[*] Step 3/5: Configuring Voice VLAN 406 in UCI network..."
+echo "[*] Step 3/6: Configuring Voice VLAN 406 in UCI network..."
 
 # Create 802.1q VLAN device
 uci set network.voice_dev=device
@@ -74,7 +88,7 @@ uci set network.voice.delegate="0"
 uci set network.voice.metric="20"
 
 # Step 4: Configure Firewall Zone & Forwarding
-echo "[*] Step 4/5: Configuring firewall zone and SIP routing..."
+echo "[*] Step 4/6: Configuring firewall zone and SIP routing..."
 
 uci set firewall.voice_zone=zone
 uci set firewall.voice_zone.name="voice"
@@ -103,8 +117,17 @@ uci set firewall.voice_sip_allow.target="ACCEPT"
 uci commit network
 uci commit firewall
 
-# Step 5: Install QoS nftables DSCP Rules & JioJoin SSDP Beacon
-echo "[*] Step 5/5: Installing QoS rules and JioJoin SSDP beacon daemon..."
+# Step 5: Disable Kernel SIP ALG (Eliminates One-Way Audio)
+echo "[*] Step 5/6: Disabling kernel SIP ALG helper to prevent RTP audio drops..."
+mkdir -p /etc/modules.d
+cat << 'EOF' > /etc/modules.d/99-blacklist-sip
+blacklist nf_nat_sip
+blacklist nf_conntrack_sip
+EOF
+rmmod nf_nat_sip nf_conntrack_sip 2>/dev/null || true
+
+# Step 6: Install QoS nftables DSCP Rules & JioJoin SSDP Beacon
+echo "[*] Step 6/6: Installing QoS rules and JioJoin SSDP beacon daemon..."
 
 # Install nftables QoS rules into /etc/nftables.d/
 mkdir -p /etc/nftables.d
@@ -168,7 +191,6 @@ send_beacon() {
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,bind=${ROUTER_IP},broadcast 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | socat - UDP4-DATAGRAM:239.255.255.250:1900,broadcast 2>/dev/null || true
     elif command -v nc >/dev/null 2>&1; then
-        printf "%b" "$SSDP_NOTIFY" | nc -u -w1 -s "$ROUTER_IP" 239.255.255.250 1900 2>/dev/null || \
         printf "%b" "$SSDP_NOTIFY" | nc -u -w1 239.255.255.250 1900 2>/dev/null || true
     fi
 }
@@ -217,6 +239,7 @@ case "$1" in
             echo "[*] Restoring configurations from $LATEST..."
             tar -xzf "$LATEST" -C /
             rm -f /etc/nftables.d/40-jio-voice.nft
+            rm -f /etc/modules.d/99-blacklist-sip
             /etc/init.d/network restart
             /etc/init.d/firewall restart
             echo "[SUCCESS] Configuration reverted to pre-install snapshot."
@@ -242,6 +265,7 @@ echo "🎉 SUCCESS: JioFiber Voice Gateway is ready!"
 echo "=========================================================="
 echo "• Voice VLAN:             $VOICE_DEV"
 echo "• Multicast Beacon:       br-lan (Active RFC SSDP NOTIFY)"
+echo "• SIP ALG Helper:         Disabled (Zero One-Way Audio Drops)"
 echo "• Pairing Status:         Instant JioJoin Detection Enabled"
 echo "• Safety Rollback:        /etc/jio-voice/backup_restore.sh --restore"
 echo "=========================================================="
