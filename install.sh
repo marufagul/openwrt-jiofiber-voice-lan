@@ -114,6 +114,10 @@ uci set firewall.voice_sip_allow.proto="udp tcp"
 uci set firewall.voice_sip_allow.dest_port="5060 5061 5068"
 uci set firewall.voice_sip_allow.target="ACCEPT"
 
+# Dynamically ensure WAN zone includes voice if needed
+WAN_ZONE=$(uci show firewall | grep "\.name='wan'" | cut -d'.' -f2 | head -n 1)
+[ -n "$WAN_ZONE" ] && uci set firewall."$WAN_ZONE".mtu_fix='1'
+
 uci commit network
 uci commit firewall
 

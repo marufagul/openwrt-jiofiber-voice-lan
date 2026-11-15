@@ -108,6 +108,11 @@ To restore previous settings at any time:
 
 ## 📱 Using Official JioJoin App
 
+> [!IMPORTANT]
+> **JioFiber FTTH vs. Jio AirFiber 5G:**  
+> This repository uses **VLAN 406**, which is the dedicated IMS voice slice on **JioFiber FTTH (Optical Fiber / GPON)**.  
+> If you are on **Jio AirFiber 5G (Outdoor Unit / MT7986)**, your voice traffic is carried inside the 5G broadband bearer on **VLAN 1015**. Please refer to our [Hardware Compatibility Guide](docs/HARDWARE_COMPATIBILITY.md) and [jio-airfiber-openwrt-5g-wan](https://github.com/marufagul/jio-airfiber-openwrt-5g-wan).
+
 1. Connect your smartphone to your OpenWrt router's Wi-Fi network.
 2. Open the **JioJoin** app (Google Play / Apple App Store).
 3. Tap **Configure JioFiber Device**. The app will detect your OpenWrt router via our beacon daemon.
