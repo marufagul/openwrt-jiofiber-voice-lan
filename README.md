@@ -15,6 +15,14 @@
 
 ---
 
+> [!TIP]
+> ### 📦 Complete Jio OpenWrt Ecosystem Suite
+> • 📞 **Home Landline Voice Gateway:** [openwrt-jiofiber-voice-lan](https://github.com/marufagul/openwrt-jiofiber-voice-lan) *(This Repo - Free landline calls over Wi-Fi via JioJoin & SIP)*  
+> • 🚀 **5G WAN & Wi-Fi 6 Engine:** [jio-airfiber-openwrt-5g-wan](https://github.com/marufagul/jio-airfiber-openwrt-5g-wan) *(2.5G Wire-Speed, 464XLAT & HE160 Wi-Fi for JIDU6401)*  
+> • 🌍 **Global Cloud Asterisk PBX:** [jiofiber-asterisk-global-pbx](https://github.com/marufagul/jiofiber-asterisk-global-pbx) *(Zero roaming landline calling on your phone worldwide)*
+
+---
+
 ## 💡 Why I Built This (A Note from the Author)
 
 When I flashed OpenWrt onto my Jio router hardware, I searched everywhere across GitHub, BroadbandForum, Reddit, and YouTube to find instructions on how to use the included Jio landline number on my own router.
