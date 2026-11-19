@@ -10,6 +10,17 @@ set -e
 INSTALL_DIR="/etc/jio-voice"
 BACKUP_DIR="/etc/jio-voice/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+CUSTOM_MAC=""
+CUSTOM_SERIAL=""
+
+# Parse optional arguments
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --mac) CUSTOM_MAC="$2"; shift 2;;
+        --serial) CUSTOM_SERIAL="$2"; shift 2;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+done
 
 echo "=========================================================="
 echo "📞 JioFiber Voice on OpenWrt (LAN & Wi-Fi Gateway) Setup"
@@ -68,6 +79,17 @@ fi
 echo "[+] Using WAN device: $WAN_IFACE"
 VOICE_DEV="${WAN_IFACE}.406"
 
+# Determine MAC address to apply to Voice VLAN 406
+if [ -n "$CUSTOM_MAC" ]; then
+    MAC_VOICE="$CUSTOM_MAC"
+    echo "[+] Using user-specified stock WAN MAC: $MAC_VOICE"
+else
+    MAC_VOICE=$(cat /sys/class/net/"$WAN_IFACE"/address 2>/dev/null || echo "")
+    if [ -n "$MAC_VOICE" ]; then
+        echo "[+] Auto-inherited physical WAN MAC onto Voice VLAN 406: $MAC_VOICE"
+    fi
+fi
+
 # Step 3: Configure Voice VLAN 406 in UCI
 echo "[*] Step 3/6: Configuring Voice VLAN 406 in UCI network..."
 
@@ -77,6 +99,18 @@ uci set network.voice_dev.name="$VOICE_DEV"
 uci set network.voice_dev.type="8021q"
 uci set network.voice_dev.ifname="$WAN_IFACE"
 uci set network.voice_dev.vid="406"
+[ -n "$MAC_VOICE" ] && uci set network.voice_dev.macaddr="$MAC_VOICE"
+
+# Store hardware identification parameters
+if [ -n "$CUSTOM_SERIAL" ]; then
+    echo "$CUSTOM_SERIAL" > "$INSTALL_DIR/deviceSerial"
+    echo "$CUSTOM_SERIAL" > /tmp/deviceSerial
+    echo "[+] Provisioned router serial number: $CUSTOM_SERIAL"
+fi
+if [ -n "$MAC_VOICE" ]; then
+    echo "$MAC_VOICE" > "$INSTALL_DIR/wanMAC"
+    echo "$MAC_VOICE" > /tmp/wanMAC
+fi
 
 # Configure network.voice interface
 uci set network.voice=interface

@@ -50,11 +50,43 @@ We spent hundreds of hours of intense reverse-engineering:
 
 ---
 
+## 🏷️ Step 0: Identify Your Router's Stock MAC & Serial Number (Crucial)
+
+Jio's IMS Voice Core and the official JioJoin mobile app authenticate your landline number using **two unique hardware identifiers from your original router**:
+1. **WAN MAC Address (`wanMAC`)**: Registered on Jio's Voice VLAN 406.
+2. **Device Serial Number (`deviceSerial`)**: Used by the JioJoin app during the OTP device-binding handshake.
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│  Jio Home Gateway                                          │
+│  Model: JIDU6401                                           │
+│  WAN MAC:  9C:D4:A6:XX:XX:XX  <─── [NOTE DOWN THIS MAC]   │
+│  S/N:      RSVHGHKW00XXXXX    <─── [NOTE DOWN THIS S/N]   │
+└────────────────────────────────────────────────────────────┘
+```
+
+> [!IMPORTANT]
+> **Pass your factory values to the installer:**
+> ```bash
+> wget -O install.sh https://raw.githubusercontent.com/marufagul/openwrt-jiofiber-voice-lan/main/install.sh
+> chmod +x install.sh
+> ./install.sh --mac "9C:D4:A6:XX:XX:XX" --serial "RSVHGHKW00XXXXX"
+> ```
+> *(Or run `./install.sh` without arguments; it will automatically attempt to inherit the physical MAC).*
+
+---
+
 ## ⚡ Quick Start (1-Line Install)
 
 SSH into your OpenWrt router and run:
 
 ```bash
+# Recommended: Run with your router sticker MAC & Serial Number
+wget -O install.sh https://raw.githubusercontent.com/marufagul/openwrt-jiofiber-voice-lan/main/install.sh
+chmod +x install.sh
+./install.sh --mac "9C:D4:A6:XX:XX:XX" --serial "RSVHGHKW00XXXXX"
+
+# Alternative: 1-line auto-installer
 wget -O - https://raw.githubusercontent.com/marufagul/openwrt-jiofiber-voice-lan/main/install.sh | sh
 ```
 
