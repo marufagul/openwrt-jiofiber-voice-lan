@@ -113,11 +113,21 @@ To restore previous settings at any time:
 > This repository uses **VLAN 406**, which is the dedicated IMS voice slice on **JioFiber FTTH (Optical Fiber / GPON)**.  
 > If you are on **Jio AirFiber 5G (Outdoor Unit / MT7986)**, your voice traffic is carried inside the 5G broadband bearer on **VLAN 1015**. Please refer to our [Hardware Compatibility Guide](docs/HARDWARE_COMPATIBILITY.md) and [jio-airfiber-openwrt-5g-wan](https://github.com/marufagul/jio-airfiber-openwrt-5g-wan).
 
-1. Connect your smartphone to your OpenWrt router's Wi-Fi network.
-2. Open the **JioJoin** app (Google Play / Apple App Store).
-3. Tap **Configure JioFiber Device**. The app will detect your OpenWrt router via our beacon daemon.
-4. Enter the OTP sent to your registered Jio mobile number.
-5. Your home landline is now live and ringing on your smartphone!
+> [!NOTE]
+> **JioJoin App Pairing Architecture (Phase 1 vs Phase 2):**  
+> 1. **Discovery (Phase 1):** Our daemon broadcasts SSDP beacons so the JioJoin app instantly finds the gateway.  
+> 2. **OTP Registration (Phase 2):** To complete OTP pairing, the official app queries the proprietary Sercomm voice daemon (`hgw-voice-app`) or an on-router SIP proxy.  
+> 👉 Read our in-depth [JioJoin Authentication Architecture Guide](docs/JIOJOIN_AND_VOICE_AUTHENTICATION_ARCHITECTURE.md) to understand how to complete OTP pairing with stock firmware dumps or bridge to our companion Asterisk PBX.
+
+---
+
+## 💻 Manual Setup via SSH (No AI / No Scripts Required)
+
+If you prefer to configure your router manually using standard terminal commands without running any scripts:
+
+👉 **[Read the Full Manual SSH Configuration Guide](docs/MANUAL_SSH_CONFIGURATION.md)**
+
+Every command is explained step-by-step: creating `wan.406`, setting up firewall zones, disabling SIP ALG, and applying nftables DSCP voice prioritization.
 
 ---
 
